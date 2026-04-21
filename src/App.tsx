@@ -85,7 +85,7 @@ export default function App() {
       const utterance = new SpeechSynthesisUtterance(chunks[index].trim());
       
       // NEURAL OPTIMIZED PROFILE
-      utterance.rate = 0.95; 
+      utterance.rate = 0.85; 
       utterance.pitch = 1.0; 
       utterance.volume = 1.0; 
       
@@ -181,11 +181,27 @@ export default function App() {
     if (!videoRef.current || !canvasRef.current) return null;
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+
+    // Cap resolution for reliable AI analysis and reduced latency
+    const maxDim = 1024;
+    let width = video.videoWidth;
+    let height = video.videoHeight;
+
+    if (width > maxDim || height > maxDim) {
+      if (width > height) {
+        height = (maxDim / width) * height;
+        width = maxDim;
+      } else {
+        width = (maxDim / height) * width;
+        height = maxDim;
+      }
+    }
+
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, width, height);
     return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
   }, []);
 
@@ -201,6 +217,12 @@ export default function App() {
     // UI Update: Highlight detected type labels in results sidebar
     if (analysis.analysis?.type && analysis.analysis.type !== 'unknown') {
       const detectedLabel = analysis.analysis.type === 'text' ? 'reading' : analysis.analysis.type;
+      
+      // If auto-detected music, add an intro announcement if not already provided by statusAnnounced
+      if (analysis.analysis.type === 'music' && !analysis.statusAnnounced) {
+        analysis.statusAnnounced = "Music score detected. Analyzing notation.";
+      }
+
       if (mode === 'auto') {
         // We just stay in auto but log/announce detection
         // No longer switching the actual mode state as per request to keep only Smart Sense
@@ -311,7 +333,7 @@ export default function App() {
   // Initial Greeting
   useEffect(() => {
     const timer = setTimeout(() => {
-      speak("Welcome to IBRA AI Please tap the center of the screen to initialize your camera and begin scanning your documents");
+      speak("Welcome to VoxVision AI Please tap the center of the screen to initialize your camera and begin scanning your documents");
     }, 1000);
     return () => clearTimeout(timer);
   }, []);
@@ -321,7 +343,8 @@ export default function App() {
     let timeout: NodeJS.Timeout;
     
     const runAnalysis = async () => {
-      if (autoMode && isCameraActive && !isAnalyzing && !isAnalysisPaused) {
+      // STOP SCANNING if currently reading or if scanning is manually/automatically paused
+      if (autoMode && isCameraActive && !isAnalyzing && !isAnalysisPaused && !isReading) {
         await performAnalysis();
       }
       // Schedule next check
@@ -357,8 +380,8 @@ export default function App() {
           <div className="w-6 h-6 bg-accent rounded-sm flex items-center justify-center">
             <Scan className="w-4 h-4 text-black" />
           </div>
-          <h1 className="font-bold tracking-[2px] text-accent text-sm uppercase hidden sm:block">IBRA AI</h1>
-          <h1 className="font-bold tracking-[2px] text-accent text-xs uppercase sm:hidden">IBRA AI</h1>
+          <h1 className="font-bold tracking-[2px] text-accent text-sm uppercase hidden sm:block">VoxVision AI</h1>
+          <h1 className="font-bold tracking-[2px] text-accent text-xs uppercase sm:hidden">VoxVision</h1>
         </div>
         <div className="flex items-center gap-4 lg:gap-8 text-[10px] font-mono text-text-dim">
           <div className="hidden md:flex items-center gap-2">
@@ -446,7 +469,7 @@ export default function App() {
               <Camera className="w-10 h-10 opacity-30 group-hover:opacity-100 group-hover:text-accent transition-all" />
             </motion.div>
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-white mb-2">Welcome to IBRA AI</h2>
+              <h2 className="text-xl font-bold tracking-tight text-white mb-2">Welcome to VoxVision</h2>
               <p className="text-xs text-text-dim max-w-xs mb-8 uppercase tracking-widest leading-loose">
                 Tap anywhere in this area to initialize your camera and begin scanning.
               </p>

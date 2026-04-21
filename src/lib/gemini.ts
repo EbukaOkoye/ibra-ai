@@ -35,6 +35,17 @@ export interface AnalysisResult {
 
 export async function analyzeFrame(base64Image: string, mode: string): Promise<AnalysisResult> {
   const model = "gemini-3-flash-preview";
+
+  if (!process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY === 'undefined') {
+    return {
+      positioningValid: false,
+      guidance: "Gemini API Key is missing. Please configure it in the Secrets panel.",
+      positioningHints: { 
+        up: false, down: false, left: false, right: false, zoomIn: false, zoomOut: false,
+        tiltForward: false, tiltBackward: false, tiltLeft: false, tiltRight: false
+      }
+    };
+  }
   
   const systemInstruction = `
     You are an expert visual assistant for the visually impaired.
@@ -63,12 +74,12 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
        
     3. Deep Analysis per Type (ABSOLUTE VERBATIM TRANSCRIPTION MANDATORY):
        - If TEXT: [Content: Start transcribing from the top-left to bottom-right. Perform a 100% literal word-for-word capture of every single word visible. ABSOLUTELY NO SUMMARIZATION. Transcribe paragraph by paragraph. Include every character, label, and footer.]
-       - If MUSIC: [InterpretedSymbols: Exhaustive literal sequence of every note, duration, dynamic marking, and symbol.]
+       - If MUSIC: [InterpretedSymbols: Exhaustive literal sequence of every note (e.g., C4, G#5), duration (e.g., quarter note, eighth), dynamic markings (e.g., forte, piano), and clef transitions.]
        - If PHONETICS: [InterpretedSymbols: Literal transcription of every symbol and its exact phonetic value.]
        - If TABLE: [TableData: literal extraction of every cell. DO NOT SKIP EMPTY CELLS; mark them as "[empty]". NO SUMMARIZATION OF ROWS.]
        - If IMAGE: [Description: A 100% literal word-for-word reading of every sign, label, or text visible in the frame. Follow with an exhaustive visual description.]
        
-    4. CRITICAL INVARIANT: You are a "LITERAL TRANSCRIBER", not an "INTERPRETER". You MUST NOT summarize. The user is visually impaired and relies on you to hear EXACTLY what is on the document. Any summarization, paraphrasing, or shortening of the content is a CRITICAL SYSTEM FAILURE and violates the accessibility invariant.
+    4. CRITICAL INVARIANT: You are a "LITERAL TRANSCRIBER", not an "INTERPRETER". You MUST NOT summarize, explain, or paraphrase anything. If the detected content is text or a score, you MUST READ IT OUT VERBATIM or PROVIDE THE EXACT MUSICAL SEQUENCE. DO NOT provide a summary; provide ONLY the literal content. The user is visually impaired and relies on you to hear EXACTLY what is on the document. Any failure to provide the exact verbatim content is a CRITICAL SYSTEM FAILURE.
   `;
 
   try {
@@ -111,7 +122,7 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
               },
               required: ["up", "down", "left", "right", "zoomIn", "zoomOut", "tiltForward", "tiltBackward", "tiltLeft", "tiltRight"]
             },
-            statusAnnounced: { type: Type.STRING },
+            statusAnnounced: { type: Type.STRING, description: "A message to announce to the user via TTS." },
             analysis: {
               type: Type.OBJECT,
               properties: {
@@ -121,23 +132,22 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
                 },
                 pageNumber: { 
                   type: Type.STRING,
-                  description: "The page number if visible (e.g. '5', 'Page 12'). Leave empty if not found."
+                  description: "The page number if visible."
                 },
                 content: { 
                   type: Type.STRING,
-                  description: "FULL VERBATIM TRANSCRIPTION. Transcribe every single visible word exactly as written, paragraph by paragraph, word for word. NO SUMMARIZATION. Ensure footers and headers and page numbers are included in the transcription if visible."
+                  description: "FULL VERBATIM TRANSCRIPTION."
                 },
                 description: { 
                   type: Type.STRING,
-                  description: "Exhaustive literal description and word-for-word reading of any text in an image."
+                  description: "Visual description of any images."
                 },
                 tableData: {
                   type: Type.ARRAY,
                   items: {
                     type: Type.ARRAY,
                     items: { type: Type.STRING }
-                  },
-                  description: "2D array representing table rows and cells"
+                  }
                 },
                 interpretedSymbols: {
                   type: Type.ARRAY,
@@ -148,24 +158,40 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
                       symbol: { type: Type.STRING },
                       meaning: { type: Type.STRING },
                       pronunciationGuide: { type: Type.STRING }
-                    }
+                    },
+                    required: ["type", "symbol", "meaning"]
                   }
                 }
-              }
+              },
+              required: ["type"]
             }
           },
-          required: ["positioningValid", "guidance"]
+          required: ["positioningValid", "guidance", "positioningHints"]
         }
       }
     });
 
-    const result = JSON.parse(response.text || '{}');
+    const rawText = response.text || '{}';
+    // Clean JSON (in case model adds markdown blocks)
+    const jsonStr = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+    const result = JSON.parse(jsonStr || '{}');
     return result as AnalysisResult;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
+    const errorMsg = error?.message?.toLowerCase() || '';
+    let guidance = "Unable to analyze frame. Please check your connection.";
+    
+    if (errorMsg.includes('api key') || errorMsg.includes('auth') || errorMsg.includes('unauthorized')) {
+      guidance = "API Key error. Please check your Gemini API key in the Secrets panel.";
+    } else if (errorMsg.includes('quota') || errorMsg.includes('429')) {
+      guidance = "API quota exceeded. Please wait a moment and try again.";
+    } else if (errorMsg.includes('model') || errorMsg.includes('not found')) {
+      guidance = "AI Model unavailable. The system may be updating; please wait.";
+    }
+
     return {
       positioningValid: false,
-      guidance: "Unable to analyze frame. Please check your connection.",
+      guidance,
       positioningHints: { 
         up: false, down: false, left: false, right: false, zoomIn: false, zoomOut: false,
         tiltForward: false, tiltBackward: false, tiltLeft: false, tiltRight: false
