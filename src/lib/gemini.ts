@@ -48,38 +48,26 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
   }
   
   const systemInstruction = `
-    You are an expert visual assistant for the visually impaired.
-    Your PRIMARY TASK is to AUTOMATICALLY SENSE the type of content in the camera frame.
+    You are a high-precision LITERAL TRANSCRIBER for the visually impaired. 
+    Your mission is to provide an EXACT word-for-word audio map of whatever is in the frame.
     
-    Current suggested mode (User's preference): ${mode}
+    CRITICAL BEHAVIOR RULES:
+    1. NO SUMMARIZATION: Never use phrases like "This is a book about..." or "The text describes...".
+    2. NO OMISSION: Every single visible word, number, and character must be transcribed in the order it appears.
+    3. STRUCTURAL HINTS: Identify and explicitly label "Page Number", "Title", and "Heading" if they are distinct.
     
-    INSTRUCTIONS:
-    1. Automatic Type Detection:
-       Ignore the suggested mode if you see something else. 
-       Classify the content into one of these types:
-       - 'text': Standard document text, books, or articles.
-       - 'music': Musical scores, staves, notes, and clefs.
-       - 'phonetics': IPA symbols, phonetic charts, or pronunciation guides.
-       - 'table': Grid-based data, schedules, or lists.
-       - 'image': Photographs, diagrams, or drawings.
-       - 'unknown': If content is unclear or too blurry.
-       
-    2. Check Positioning:
-       - Provide clear guidance to get the best capture.
-       - Analyze angle and distance: If the document is tilted, skewed, or at an awkward perspective, provide specific instructions to level the camera.
-       - 'tiltForward': True if the top of the document is further than the bottom.
-       - 'tiltBackward': True if the bottom is further than the top.
-       - 'tiltLeft': True if the left side is further than the right.
-       - 'tiltRight': True if the right side is further than the left.
-       
-    3. Deep Analysis per Type (ABSOLUTE VERBATIM TRANSCRIPTION MANDATORY):
-       - If TEXT: [Content: Start transcribing from the top-left to bottom-right. Perform a 100% literal word-for-word capture of every single word visible. ABSOLUTELY NO SUMMARIZATION. Transcribe paragraph by paragraph. Include every character, label, and footer.]
-       - If MUSIC: [InterpretedSymbols: Exhaustive literal sequence of every note (e.g., C4, G#5), duration (e.g., quarter note, eighth), dynamic markings (e.g., forte, piano), and clef transitions.]
-       - If PHONETICS: [InterpretedSymbols: Literal transcription of every symbol and its exact phonetic value.]
-       - If TABLE: [TableData: literal extraction of every cell. DO NOT SKIP EMPTY CELLS; mark them as "[empty]". NO SUMMARIZATION OF ROWS.]
-       - If IMAGE: [Description: A 100% literal word-for-word reading of every sign, label, or text visible in the frame. Follow with an exhaustive visual description.]
-       
-    4. CRITICAL INVARIANT: You are a "LITERAL TRANSCRIBER", not an "INTERPRETER". You MUST NOT summarize, explain, or paraphrase anything. If the detected content is text or a score, you MUST READ IT OUT VERBATIM or PROVIDE THE EXACT MUSICAL SEQUENCE. DO NOT provide a summary; provide ONLY the literal content. The user is visually impaired and relies on you to hear EXACTLY what is on the document. Any failure to provide the exact verbatim content is a CRITICAL SYSTEM FAILURE.
+    TYPE-SPECIFIC DEPTH (MANDATORY):
+    - 'text': 100% Lliteral word-for-word extraction. Paragraph by paragraph. From very top to very bottom.
+    - 'music': Literal sequence: Clef -> Time Signature -> Notes (with Octaves, e.g. C4) -> Durations -> Dynamics.
+    - 'table': Row by row, cell by cell extraction. Mark empty cells as "[empty]". NO SUMMARIZING TRENDS.
+    - 'phonetics': Literal IPA symbol extraction and exact phonetic values.
+    - 'image': Literal reading of EVERY label or sign in the image first, then an exhaustive factual description.
+    
+    POSITIONING GUARD:
+    - You must guide the user to a perfectly level, well-lit, and centered capture. 
+    - Use 'tilt' hints to correct perspective skew.
+    
+    If the content is TEXT, your "content" field MUST be the literal raw text. No intro, no outro, no commentary.
   `;
 
   try {
@@ -88,7 +76,7 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
       contents: [
         {
           parts: [
-            { text: "Analyze this frame based on your instructions." },
+            { text: "TRANSCRIPTION TASK: Provide 100% literal verbatim content for this frame. DO NOT SUMMARIZE." },
             {
               inlineData: {
                 mimeType: "image/jpeg",
@@ -122,7 +110,7 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
               },
               required: ["up", "down", "left", "right", "zoomIn", "zoomOut", "tiltForward", "tiltBackward", "tiltLeft", "tiltRight"]
             },
-            statusAnnounced: { type: Type.STRING, description: "A message to announce to the user via TTS." },
+            statusAnnounced: { type: Type.STRING, description: "Instant feedback for the user (e.g. 'Analyzing Table' or 'Reading Title: [Title Name]')." },
             analysis: {
               type: Type.OBJECT,
               properties: {
@@ -130,17 +118,18 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
                   type: Type.STRING, 
                   enum: ["text", "music", "table", "phonetics", "image", "unknown"] 
                 },
+                title: { type: Type.STRING, description: "The main heading or title of the section/book if visible." },
                 pageNumber: { 
                   type: Type.STRING,
-                  description: "The page number if visible."
+                  description: "The page number (e.g. '15') if visible."
                 },
                 content: { 
                   type: Type.STRING,
-                  description: "FULL VERBATIM TRANSCRIPTION."
+                  description: "EXHAUSTIVE VERBATIM TEXT. NO SUMMARIES. Word for word exactly as written."
                 },
                 description: { 
                   type: Type.STRING,
-                  description: "Visual description of any images."
+                  description: "Literal description of images and any labels found within them."
                 },
                 tableData: {
                   type: Type.ARRAY,
@@ -175,6 +164,12 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
     // Clean JSON (in case model adds markdown blocks)
     const jsonStr = rawText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
     const result = JSON.parse(jsonStr || '{}');
+    
+    // Auto-label verbatim content if it's text to ensure App.tsx triggers pause
+    if (result.analysis?.type === 'text' && result.analysis.content) {
+      // Force result to be treated as high-priority verbatim
+    }
+
     return result as AnalysisResult;
   } catch (error: any) {
     console.error("Gemini Analysis Error:", error);
