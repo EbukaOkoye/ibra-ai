@@ -4,14 +4,14 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  Camera,
-  BookOpen,
-  Music,
-  Mic2,
-  RotateCcw,
-  AlertCircle,
-  Volume2,
+import { 
+  Camera, 
+  BookOpen, 
+  Music, 
+  Mic2, 
+  RotateCcw, 
+  AlertCircle, 
+  Volume2, 
   VolumeX,
   Scan,
   Pause,
@@ -25,7 +25,9 @@ import {
   ArrowRight,
   Maximize,
   Minimize,
-  RefreshCw
+  RefreshCw,
+  Check,
+  ChevronRight
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { analyzeFrame, AnalysisResult } from './lib/gemini';
@@ -63,13 +65,13 @@ export default function App() {
   // Initialize Speech
   const speak = (text: string) => {
     if (isMuted || !text) return;
-
+    
     // Cleanup existing speech
     window.speechSynthesis.cancel();
-
+    
     // Sanitize text for smoother utterance
     const cleanText = text.replace(/[*_#]/g, '').trim();
-
+    
     // Split text into chunks by sentences or paragraphs without isolating punctuation
     // This prevents the utterance from containing ONLY punctuation, which some browsers read aloud
     const chunks = cleanText.match(/([^\n.!?]+[.!?]*|\n\n)/g)?.map(s => s.trim()).filter(Boolean) || [cleanText];
@@ -83,14 +85,14 @@ export default function App() {
 
       currentChunkIdx = index;
       const utterance = new SpeechSynthesisUtterance(chunks[index].trim());
-
+      
       // NEURAL OPTIMIZED PROFILE
-      utterance.rate = 0.85;
-      utterance.pitch = 1.0;
-      utterance.volume = 1.0;
-
+      utterance.rate = 0.8; 
+      utterance.pitch = 1.0; 
+      utterance.volume = 1.0; 
+      
       utteranceRef.current = utterance;
-
+      
       const voices = window.speechSynthesis.getVoices();
       const findVoice = () => {
         const neural = voices.find(v => (v.name.includes('Natural') || v.name.includes('Neural') || v.name.includes('Online')) && v.lang.startsWith('en'));
@@ -107,7 +109,7 @@ export default function App() {
         utterance.voice = targetVoice;
         utterance.pitch = (targetVoice.name.includes('Google') || targetVoice.name.includes('Natural')) ? 1.0 : 1.02;
       }
-
+      
       utterance.onstart = () => setIsReading(true);
       utterance.onend = () => speakNextChunk(index + 1);
       utterance.onerror = (e) => {
@@ -145,20 +147,28 @@ export default function App() {
     }
 
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        }
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment', 
+          width: { ideal: 1280 }, 
+          height: { ideal: 720 } 
+        } 
       });
-
+      
       setStream(mediaStream);
       setIsCameraActive(true);
       setMode('auto');
       setAutoMode(true);
+      setIsAnalysisPaused(false); // Ensure it starts immediately
       setError(null);
       speak("System initialized Smart Sense mode active");
+      
+      // Start capturing immediately once stream is ready
+      setTimeout(() => {
+        if (!isReading && !isAnalyzing) {
+          performAnalysis();
+        }
+      }, 1500);
     } catch (err: any) {
       console.error("Camera Access Error:", err);
       if (err.name === 'NotAllowedError') {
@@ -207,17 +217,17 @@ export default function App() {
 
   const performAnalysis = async () => {
     if (!isCameraActive || isAnalyzing || !mode) return;
-
+    
     const frame = captureFrame();
     if (!frame) return;
 
     setIsAnalyzing(true);
     const analysis = await analyzeFrame(frame, mode);
-
+    
     // UI Update: Highlight detected type labels in results sidebar
     if (analysis.analysis?.type && analysis.analysis.type !== 'unknown') {
       const detectedLabel = analysis.analysis.type === 'text' ? 'reading' : analysis.analysis.type;
-
+      
       // If auto-detected music, add an intro announcement if not already provided by statusAnnounced
       if (analysis.analysis.type === 'music' && !analysis.statusAnnounced) {
         analysis.statusAnnounced = "Music score detected. Analyzing notation.";
@@ -259,7 +269,7 @@ export default function App() {
         if (hints.tiltBackward) directHints.push("Tilt backward.");
         if (hints.tiltLeft) directHints.push("Rotate left.");
         if (hints.tiltRight) directHints.push("Rotate right.");
-
+        
         if (directHints.length > 0) {
           guidanceText = `${directHints.join(' ')} ${guidanceText}`;
         }
@@ -277,7 +287,7 @@ export default function App() {
       feedbackParts.push(analysis.statusAnnounced);
     } else {
       const hasContent = !!(analysis.analysis?.content || analysis.analysis?.description || analysis.analysis?.tableData || analysis.analysis?.interpretedSymbols);
-
+      
       if (hasContent) {
         const pageNumber = analysis.analysis?.pageNumber;
         const title = (analysis.analysis as any)?.title;
@@ -285,15 +295,15 @@ export default function App() {
         if (title) {
           feedbackParts.push(`Title: ${title}.`);
         }
-
+        
         if (pageNumber) {
           feedbackParts.push(`Page ${pageNumber}.`);
         }
 
         if (analysis.analysis?.content) {
           feedbackParts.push(analysis.analysis.content);
-        }
-
+        } 
+        
         if (analysis.analysis?.description) {
           feedbackParts.push(analysis.analysis.description);
         }
@@ -317,17 +327,22 @@ export default function App() {
     // Immediate synthesis
     if (feedbackParts.length > 0) {
       const fullSpeech = feedbackParts.join('  ');
-
+      
       // Prevent repeating the exact same long verbatim content if nothing has changed
       // This allows guidance to repeat (since it has its own throttle) but blocks
       // the document from being read over and over if the camera is still.
-      const isVerbatimContent = !!(analysis.analysis?.content || analysis.analysis?.tableData);
+      const isVerbatimContent = !!(analysis.analysis?.content || analysis.analysis?.tableData || analysis.analysis?.interpretedSymbols);
       if (isVerbatimContent && fullSpeech.trim() === lastSpokenContentFingerprint.current?.trim()) {
-        return;
+        return; 
+      }
+
+      let speechWithPrompt = fullSpeech;
+      if (isVerbatimContent) {
+        speechWithPrompt += "  The transcription is complete. Tap the Scan button at the bottom center to perform another scan.";
       }
 
       lastSpokenContentFingerprint.current = fullSpeech.trim();
-      speak(fullSpeech);
+      speak(speechWithPrompt);
 
       // If we found verbatim content, pause future scans until the user manually triggers again
       if (isVerbatimContent) {
@@ -347,7 +362,7 @@ export default function App() {
   // Auto-analysis loop
   useEffect(() => {
     let timeout: NodeJS.Timeout;
-
+    
     const runAnalysis = async () => {
       // STOP SCANNING if currently reading or if scanning is manually/automatically paused
       if (autoMode && isCameraActive && !isAnalyzing && !isAnalysisPaused && !isReading) {
@@ -394,25 +409,25 @@ export default function App() {
             <span className={isCameraActive ? "text-accent" : "text-red-500"}>●</span>
             <span>CAM: {isCameraActive ? '4K/60FPS' : 'OFFLINE'}</span>
           </div>
-          <button
+          <button 
             onClick={() => {
               setIsMuted(!isMuted);
               if (isMuted) speak("Voice guidance enabled.");
-            }}
+            }} 
             className={`flex items-center gap-2 px-2 py-1 lg:px-3 lg:py-1 rounded border ${isMuted ? 'border-red-500/50 text-red-400' : 'border-accent/50 text-accent'} transition-colors`}
             aria-label={isMuted ? "Enable Voice Guidance" : "Disable Voice Guidance"}
           >
             {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
             <span className="uppercase text-[9px] lg:text-[10px]">{isMuted ? 'Off' : 'On'}</span>
           </button>
-
-          <button
+          
+          <button 
             onClick={() => setShowSidebars(!showSidebars)}
             className="lg:hidden p-2 text-text-dim hover:text-accent transition-colors"
           >
             <Settings className={`w-4 h-4 ${showSidebars ? 'text-accent rotate-90' : ''} transition-transform`} />
           </button>
-
+          
           <div className="hidden lg:flex items-center gap-2">
             <span>LATENCY: 14MS</span>
           </div>
@@ -428,10 +443,11 @@ export default function App() {
         <button
           onClick={() => isCameraActive && setMode('auto')}
           disabled={!isCameraActive}
-          className={`flex flex-col p-4 rounded-lg border text-left transition-all group ${mode === 'auto'
-              ? 'border-accent bg-accent/5 ring-1 ring-accent/20'
+          className={`flex flex-col p-4 rounded-lg border text-left transition-all group ${
+            mode === 'auto' 
+              ? 'border-accent bg-accent/5 ring-1 ring-accent/20' 
               : 'border-border-main bg-bg/50 hover:border-text-dim opacity-50 grayscale'
-            }`}
+          }`}
         >
           <div className="flex items-center justify-between mb-2">
             <span className="text-[9px] font-mono uppercase tracking-tighter text-text-dim">Module 01</span>
@@ -442,7 +458,7 @@ export default function App() {
             Automated neural detection for documents, music, objects, and data structures.
           </p>
         </button>
-
+        
         <div className="mt-auto p-3 rounded-lg border border-border-main bg-bg/30">
           <p className="text-[9px] font-mono text-text-dim uppercase mb-2">System Status</p>
           <div className="space-y-1">
@@ -460,13 +476,13 @@ export default function App() {
       {/* Main Viewport: Viewfinder */}
       <main className="flex-1 relative lg:flex items-center justify-center p-2 lg:p-5 bg-black overflow-hidden group">
         {!isCameraActive ? (
-          <div
+          <div 
             onClick={startCamera}
             className="flex flex-col items-center gap-6 text-center cursor-pointer group p-12 transition-all"
             role="button"
             aria-label="Initialize Camera"
           >
-            <motion.div
+            <motion.div 
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               className="w-24 h-24 rounded-full border border-border-main flex items-center justify-center bg-panel/50 group-hover:border-accent group-hover:bg-accent/5 transition-all"
@@ -479,7 +495,7 @@ export default function App() {
                 Tap anywhere in this area to initialize your camera and begin scanning.
               </p>
             </div>
-            <button
+            <button 
               onClick={(e) => { e.stopPropagation(); startCamera(); }}
               className="px-8 py-4 bg-accent text-black font-black text-xs tracking-[3px] rounded hover:scale-105 active:scale-95 transition-transform flex items-center gap-3 shadow-[0_0_30px_rgba(0,255,136,0.3)]"
             >
@@ -489,9 +505,65 @@ export default function App() {
           </div>
         ) : (
           <div className="relative w-full h-full max-w-4xl max-h-[600px] rounded-xl border-2 border-border-main overflow-hidden">
-            <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover grayscale opacity-80" />
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              className={`w-full h-full object-cover grayscale transition-opacity duration-300 ${isAnalyzing ? 'opacity-30' : 'opacity-80'}`} 
+            />
             <canvas ref={canvasRef} className="hidden" />
 
+            {/* Sensing Overlay */}
+            {isAnalyzing && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-[2px] z-20">
+                <div className="relative">
+                  <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin" />
+                  <Scan className="w-6 h-6 text-accent absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+                </div>
+                <p className="mt-4 text-accent font-bold tracking-[3px] text-[10px] uppercase animate-pulse">Sensing Content...</p>
+              </div>
+            )}
+
+            {/* Post-Transcription Prompt Overlay */}
+            {isAnalysisPaused && isCameraActive && !isReading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-30 p-6 text-center backdrop-blur-sm">
+                <div className="space-y-6 max-w-sm">
+                  <div className="w-16 h-16 bg-accent rounded-full flex items-center justify-center mx-auto shadow-[0_0_40px_rgba(255,160,0,0.4)]">
+                    <Check className="w-8 h-8 text-black" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-accent mb-1 uppercase tracking-tight">Reading Finished</h2>
+                    <p className="text-[10px] text-text-dim leading-relaxed uppercase tracking-widest">System paused. Tap button below to scan next page.</p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      lastSpokenContentFingerprint.current = null;
+                      setIsAnalysisPaused(false);
+                    }}
+                    className="w-full py-4 bg-accent text-black font-black uppercase tracking-[2px] text-xs rounded-lg hover:scale-105 transition-transform flex items-center justify-center gap-3 shadow-lg"
+                  >
+                    <Scan className="w-4 h-4" />
+                    Scan Next Document
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Mobile Auto-Scan Button Toggle */}
+            {!isAnalysisPaused && isCameraActive && (
+              <div className="absolute bottom-6 left-6 lg:hidden z-20">
+                <button 
+                  onClick={() => setAutoMode(!autoMode)}
+                  className={`w-14 h-14 rounded-full border shadow-2xl flex items-center justify-center transition-all ${
+                    autoMode ? 'bg-accent/20 border-accent text-accent' : 'bg-bg/60 border-border-main text-text-dim'
+                  }`}
+                  aria-label={autoMode ? "Disable Auto Scan" : "Enable Auto Scan"}
+                >
+                  <Scan className={`w-6 h-6 ${autoMode ? 'animate-pulse' : ''}`} />
+                </button>
+              </div>
+            )}
+            
             {/* High Density Overlays */}
             <div className="absolute inset-0 pointer-events-none">
               {/* Corner Markers */}
@@ -501,10 +573,11 @@ export default function App() {
               <div className="absolute bottom-4 right-4 marker br" />
 
               {/* Guide Box */}
-              <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[80%] border-2 rounded-lg flex items-center justify-center transition-all duration-500 ${result?.positioningValid ? 'border-accent border-solid shadow-[0_0_30px_rgba(0,255,136,0.2)]' : 'border-dashed border-accent/20'
-                }`}>
+              <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60%] h-[80%] border-2 rounded-lg flex items-center justify-center transition-all duration-500 ${
+                result?.positioningValid ? 'border-accent border-solid shadow-[0_0_30px_rgba(0,255,136,0.2)]' : 'border-dashed border-accent/20'
+              }`}>
                 {result?.positioningValid && (
-                  <motion.div
+                  <motion.div 
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     className="absolute -top-10 bg-accent text-black text-[10px] font-bold px-3 py-1 rounded-sm uppercase tracking-tighter"
@@ -549,7 +622,7 @@ export default function App() {
                       )}
                       {(result.positioningHints.tiltForward || result.positioningHints.tiltBackward || result.positioningHints.tiltLeft || result.positioningHints.tiltRight) && (
                         <motion.div initial={{ rotate: -45, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ opacity: 0 }} className="absolute text-warn">
-                          <RefreshCw className="w-10 h-10 animate-spin" style={{ animationDuration: '3s' }} />
+                           <RefreshCw className="w-10 h-10 animate-spin" style={{ animationDuration: '3s' }} />
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -559,7 +632,7 @@ export default function App() {
 
               {/* Scanning Bar */}
               {isAnalyzing && (
-                <motion.div
+                <motion.div 
                   initial={{ top: '10%' }}
                   animate={{ top: '90%' }}
                   transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
@@ -665,31 +738,32 @@ export default function App() {
         </div>
 
         <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4 lg:gap-6">
-          <button
-            onClick={() => {
-              if (isAnalysisPaused) {
-                lastSpokenContentFingerprint.current = null;
-                setIsAnalysisPaused(false);
-              } else {
-                setAutoMode(!autoMode);
-              }
-            }}
-            className={`px-4 py-2 lg:px-6 lg:py-3 rounded-full border flex items-center gap-2 lg:gap-3 transition-all ${(autoMode && !isAnalysisPaused)
-                ? 'border-accent text-accent bg-accent/5 ring-1 ring-accent/20'
+          <button 
+             onClick={() => {
+               if (isAnalysisPaused) {
+                 lastSpokenContentFingerprint.current = null;
+                 setIsAnalysisPaused(false);
+               } else {
+                 setAutoMode(!autoMode);
+               }
+             }}
+             className={`px-4 py-2 lg:px-6 lg:py-3 rounded-full border flex items-center gap-2 lg:gap-3 transition-all ${
+               (autoMode && !isAnalysisPaused) 
+                ? 'border-accent text-accent bg-accent/5 ring-1 ring-accent/20' 
                 : 'border-white/20 text-text-dim hover:border-white/40'
-              }`}
+             }`}
           >
             {(autoMode && !isAnalysisPaused) ? <Pause className="w-3 h-3 lg:w-4 lg:h-4 fill-current" /> : <Play className="w-3 h-3 lg:w-4 lg:h-4 fill-current" />}
             <span className="text-[9px] lg:text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
               {isAnalysisPaused ? 'Next Scan' : (autoMode ? 'Auto-Scan' : 'Idle')}
             </span>
           </button>
-
-          <button
-            onClick={() => speak(result?.analysis?.content || result?.analysis?.description || "No content to repeat.")}
-            disabled={isReading}
-            className="flex items-center gap-2 text-text-dim hover:text-accent transition-colors disabled:opacity-20 group"
-            aria-label="Repeat last reading"
+          
+          <button 
+             onClick={() => speak(result?.analysis?.content || result?.analysis?.description || "No content to repeat.")}
+             disabled={isReading}
+             className="flex items-center gap-2 text-text-dim hover:text-accent transition-colors disabled:opacity-20 group"
+             aria-label="Repeat last reading"
           >
             <RotateCcw className="w-3 h-3 lg:w-4 lg:h-4 group-hover:rotate-[-45deg] transition-transform" />
             <span className="text-[9px] font-bold uppercase tracking-tighter hidden sm:inline">Repeat</span>
