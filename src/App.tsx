@@ -489,6 +489,7 @@ export default function App() {
             >
               <Camera className="w-10 h-10 opacity-30 group-hover:opacity-100 group-hover:text-accent transition-all" />
             </motion.div>
+            {/*  */}
             <div>
               <h2 className="text-xl font-bold tracking-tight text-white mb-2">Welcome to Ibra</h2>
               <p className="text-xs text-text-dim max-w-xs mb-8 uppercase tracking-widest leading-loose">
