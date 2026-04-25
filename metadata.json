@@ -1,5 +1,5 @@
 {
-  "name": "OmniReader AI",
+  "name": "Ibra AI",
   "description": "An advanced vision-based AI assistant that reads books, describes tables, interprets music notes, and pronounces phonetic symbols with real-time camera guidance.",
   "requestFramePermissions": [
     "camera"

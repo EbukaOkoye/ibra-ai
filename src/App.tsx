@@ -55,6 +55,20 @@ export default function App() {
   const lastGuidanceTime = useRef<number>(0);
   const lastSpokenContentFingerprint = useRef<string | null>(null);
 
+  // Create refs for values that change but are needed in the async scan loop
+  const isAnalyzingRef = useRef(false);
+  const isReadingRef = useRef(false);
+  const isAnalysisPausedRef = useRef(false);
+  const autoModeRef = useRef(false);
+  const isCameraActiveRef = useRef(false);
+
+  // Sync refs with state
+  useEffect(() => { isAnalyzingRef.current = isAnalyzing; }, [isAnalyzing]);
+  useEffect(() => { isReadingRef.current = isReading; }, [isReading]);
+  useEffect(() => { isAnalysisPausedRef.current = isAnalysisPaused; }, [isAnalysisPaused]);
+  useEffect(() => { autoModeRef.current = autoMode; }, [autoMode]);
+  useEffect(() => { isCameraActiveRef.current = isCameraActive; }, [isCameraActive]);
+
   // Attach stream to video element when ready
   useEffect(() => {
     if (videoRef.current && stream) {
@@ -147,34 +161,48 @@ export default function App() {
     }
 
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          facingMode: 'environment', 
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 } 
-        } 
-      });
+      let mediaStream: MediaStream;
+      try {
+        // Try with ideal constraints first
+        mediaStream = await navigator.mediaDevices.getUserMedia({ 
+          video: { 
+            facingMode: 'environment', 
+            width: { ideal: 1280 }, 
+            height: { ideal: 720 } 
+          } 
+        });
+      } catch (firstErr) {
+        console.warn("Ideal camera constraints failed, falling back to basic video.", firstErr);
+        // Fallback to basic video access
+        mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
       
       setStream(mediaStream);
       setIsCameraActive(true);
       setMode('auto');
       setAutoMode(true);
       setIsAnalysisPaused(false); // Ensure it starts immediately
+      isAnalysisPausedRef.current = false;
+      autoModeRef.current = true;
+      isCameraActiveRef.current = true;
       setError(null);
-      speak("System initialized Smart Sense mode active");
+      speak("System initialized. Ibra AI mode active");
       
       // Start capturing immediately once stream is ready
       setTimeout(() => {
-        if (!isReading && !isAnalyzing) {
-          performAnalysis();
-        }
+        performAnalysis();
       }, 1500);
     } catch (err: any) {
       console.error("Camera Access Error:", err);
+      // Detailed error messages based on the specific W3C error names
       if (err.name === 'NotAllowedError') {
-        setError("Camera permission denied. Please allow camera access in your browser settings.");
+        setError("Camera permission denied. If you are in the AI Studio preview, try opening the app in a new tab using the button at the top right.");
+      } else if (err.name === 'NotFoundError') {
+        setError("No camera found on this device.");
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setError("Camera is already in use by another application.");
       } else {
-        setError("Could not start camera. Please ensure no other app is using it.");
+        setError(`Camera Error: ${err.message || 'Unknown error occurred'}`);
       }
     }
   };
@@ -191,6 +219,9 @@ export default function App() {
     if (!videoRef.current || !canvasRef.current) return null;
     const canvas = canvasRef.current;
     const video = videoRef.current;
+
+    // Ensure video is playing and has dimensions
+    if (video.readyState < 2 || video.videoWidth === 0) return null;
 
     // Cap resolution for reliable AI analysis and reduced latency
     const maxDim = 1024;
@@ -364,8 +395,8 @@ export default function App() {
     let timeout: NodeJS.Timeout;
     
     const runAnalysis = async () => {
-      // STOP SCANNING if currently reading or if scanning is manually/automatically paused
-      if (autoMode && isCameraActive && !isAnalyzing && !isAnalysisPaused && !isReading) {
+      // Use REFS to ensure we always have the freshest values in this loop
+      if (autoModeRef.current && isCameraActiveRef.current && !isAnalyzingRef.current && !isAnalysisPausedRef.current && !isReadingRef.current) {
         await performAnalysis();
       }
       // Schedule next check
@@ -489,9 +520,8 @@ export default function App() {
             >
               <Camera className="w-10 h-10 opacity-30 group-hover:opacity-100 group-hover:text-accent transition-all" />
             </motion.div>
-            {/*  */}
             <div>
-              <h2 className="text-xl font-bold tracking-tight text-white mb-2">Welcome to Ibra</h2>
+              <h2 className="text-xl font-bold tracking-tight text-white mb-2">Welcome to Ibra AI</h2>
               <p className="text-xs text-text-dim max-w-xs mb-8 uppercase tracking-widest leading-loose">
                 Tap anywhere in this area to initialize your camera and begin scanning.
               </p>
@@ -550,17 +580,27 @@ export default function App() {
               </div>
             )}
 
-            {/* Mobile Auto-Scan Button Toggle */}
-            {!isAnalysisPaused && isCameraActive && (
-              <div className="absolute bottom-6 left-6 lg:hidden z-20">
+            {/* Mobile Auto-Scan Button Toggle - More Prominent and always available if camera is active */}
+            {isCameraActive && (
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 lg:hidden z-20">
                 <button 
-                  onClick={() => setAutoMode(!autoMode)}
-                  className={`w-14 h-14 rounded-full border shadow-2xl flex items-center justify-center transition-all ${
-                    autoMode ? 'bg-accent/20 border-accent text-accent' : 'bg-bg/60 border-border-main text-text-dim'
+                  onClick={() => {
+                    if (isAnalysisPaused) {
+                      setIsAnalysisPaused(false);
+                      isAnalysisPausedRef.current = false;
+                    } else {
+                      setAutoMode(!autoMode);
+                    }
+                  }}
+                  className={`flex items-center gap-3 px-6 py-3 rounded-full border shadow-2xl transition-all ${
+                    (autoMode && !isAnalysisPaused) ? 'bg-accent/20 border-accent text-accent' : 'bg-bg/80 border-border-main text-text-dim'
                   }`}
                   aria-label={autoMode ? "Disable Auto Scan" : "Enable Auto Scan"}
                 >
-                  <Scan className={`w-6 h-6 ${autoMode ? 'animate-pulse' : ''}`} />
+                  <Scan className={`w-5 h-5 ${(autoMode && !isAnalysisPaused) ? 'animate-pulse' : ''}`} />
+                  <span className="font-bold text-xs uppercase tracking-widest whitespace-nowrap">
+                    {isAnalysisPaused ? 'Resume Scan' : (autoMode ? 'Auto Scan ON' : 'Auto Scan OFF')}
+                  </span>
                 </button>
               </div>
             )}
