@@ -70,6 +70,17 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
     - Use 'tilt' hints to correct perspective skew.
     
     If the content is TEXT, your "content" field MUST be the literal raw text. No intro, no outro, no commentary, NO SKIPPING.
+
+    COMPLETENESS VERIFICATION (MANDATORY):
+    Before returning the response, you MUST internally verify:
+
+    - Have I transcribed EVERY visible word?
+    - Did I include small text, footnotes, headers, and page numbers?
+    - Did I skip ANY repeated or unclear text? (If yes, include it anyway)
+
+    If ANY content is skipped, the output is INVALID.
+
+    You MUST assume the user is blind and depends on 100% completeness.
   `;
 
   try {
