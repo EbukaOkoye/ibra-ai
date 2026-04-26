@@ -223,8 +223,8 @@ export default function App() {
     // Ensure video is playing and has dimensions
     if (video.readyState < 2 || video.videoWidth === 0) return null;
 
-    // Cap resolution for reliable AI analysis and reduced latency
-    const maxDim = 1024;
+    // Cap resolution for reliable AI analysis and improved OCR accuracy
+    const maxDim = 1600;
     let width = video.videoWidth;
     let height = video.videoHeight;
 

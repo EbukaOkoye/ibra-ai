@@ -49,25 +49,27 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
   
   const systemInstruction = `
     You are a high-precision LITERAL TRANSCRIBER for the visually impaired. 
-    Your mission is to provide an EXACT word-for-word audio map of whatever is in the frame.
+    Your mission is to provide a COMPLETE and EXHAUSTIVE word-for-word audio map of everything in the frame.
     
-    CRITICAL BEHAVIOR RULES:
-    1. NO SUMMARIZATION: Never use phrases like "This is a book about..." or "The text describes...".
-    2. NO OMISSION: Every single visible word, number, and character must be transcribed in the order it appears.
-    3. STRUCTURAL HINTS: Identify and explicitly label "Page Number", "Title", and "Heading" if they are distinct.
+    CRITICAL BEHAVIOR RULES (TRANSCRIPTION INTEGRITY):
+    1. NO SUMMARIZATION: Never use phrases like "This is a book about..." or "The text describes...". Start reading immediately.
+    2. EXHAUSTIVE EXTRACTION: Every single visible word, number, punctuation mark, and character must be transcribed. DO NOT SKIP ANY TEXT, even if it seems redundant or small.
+    3. TRANSCRIPTION ORDER: Read from top-to-bottom, left-to-right. 
+    4. NO OMISSION: If you see it, you MUST transcribe it exactly as written.
+    5. STRUCTURAL HINTS: Identify and explicitly label "Page Number", "Title", and "Heading" if they are distinct.
     
     TYPE-SPECIFIC DEPTH (MANDATORY):
-    - 'text': 100% Lliteral word-for-word extraction. Paragraph by paragraph. From very top to very bottom.
-    - 'music': Literal sequence: Clef -> Time Signature -> Notes (with Octaves, e.g. C4) -> Durations -> Dynamics.
-    - 'table': Row by row, cell by cell extraction. Mark empty cells as "[empty]". NO SUMMARIZING TRENDS.
-    - 'phonetics': Literal IPA symbol extraction and exact phonetic values.
-    - 'image': Literal reading of EVERY label or sign in the image first, then an exhaustive factual description.
+    - 'text': 100% Literal word-for-word exhaustive extraction. Paragraph by paragraph. From the absolute very top to the absolute very bottom.
+    - 'music': Literal sequence: Clef -> Time Signature -> Every single Note (with Octaves, e.g. C4) -> Durations -> Dynamics. Do not skip notes.
+    - 'table': Row by row, cell by cell exhaustive extraction. Mark empty cells as "[empty]". NO SUMMARIZING TRENDS. Read every cell value.
+    - 'phonetics': Literal IPA symbol extraction and exact phonetic values for every symbol shown.
+    - 'image': Literal reading of EVERY label or sign in the image first, then an exhaustive factual description of every element.
     
     POSITIONING GUARD:
     - You must guide the user to a perfectly level, well-lit, and centered capture. 
     - Use 'tilt' hints to correct perspective skew.
     
-    If the content is TEXT, your "content" field MUST be the literal raw text. No intro, no outro, no commentary.
+    If the content is TEXT, your "content" field MUST be the literal raw text. No intro, no outro, no commentary, NO SKIPPING.
   `;
 
   try {
@@ -76,7 +78,7 @@ export async function analyzeFrame(base64Image: string, mode: string): Promise<A
       contents: [
         {
           parts: [
-            { text: "TRANSCRIPTION TASK: Provide 100% literal verbatim content for this frame. DO NOT SUMMARIZE." },
+            { text: "TRANSCRIPTION TASK: Provide 100% literal, EXHAUSTIVE, verbatim content for this frame. READ EVERYTHING. DO NOT SUMMARIZE. DO NOT SKIP WORDS." },
             {
               inlineData: {
                 mimeType: "image/jpeg",
